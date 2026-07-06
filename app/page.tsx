@@ -11,7 +11,7 @@ type Question = {
   options: string[];
   correct: number;
   funnyWrong?: string;
-  category: string;
+  category?: string;
 };
 
 const QUESTIONS: Question[] = [
@@ -109,43 +109,31 @@ export default function Home() {
   const [computerReaction, setComputerReaction] = useState("");
   const [timer, setTimer] = useState(15);
   const [questionQueue, setQuestionQueue] = useState<Question[]>([]);
-  const [roundsPlayed, setRoundsPlayed] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [comboActive, setComboActive] = useState(false);
+  const [playerStreak, setPlayerStreak] = useState(0);
+  const [computerStreak, setComputerStreak] = useState(0);
+  const [lastRoundResult, setLastRoundResult] = useState<"win" | "lose" | "tie" | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const computerTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const roundTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const startGame = useCallback(() => {
-    const shuffled = shuffleArray(QUESTIONS).slice(0, 10);
+    const shuffled = shuffleArray(QUESTIONS);
     setQuestionQueue(shuffled);
+    setRound(0);
     setPlayerScore(0);
     setComputerScore(0);
-    setRound(0);
-    setRoundsPlayed(0);
-    setStreak(0);
-    setComboActive(false);
+    setPlayerStreak(0);
+    setComputerStreak(0);
     setGamePhase("playing");
-    setShowResult(false);
-    setPlayerAnswered(false);
-    setComputerAnswered(false);
-    setCurrentQ(shuffled[0]);
-    setTimer(15);
   }, []);
 
   const nextRound = useCallback(() => {
-    if (roundTimerRef.current) clearTimeout(roundTimerRef.current);
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (computerTimerRef.current) clearTimeout(computerTimerRef.current);
-
-    const nextRoundNum = round + 1;
-    if (nextRoundNum >= questionQueue.length || nextRoundNum >= 10) {
+    if (round >= 10) {
       setGamePhase("result");
       return;
     }
-
-    setRound(nextRoundNum);
-    setCurrentQ(questionQueue[nextRoundNum]);
+    const q = questionQueue[round];
+    if (!q) return;
+    setCurrentQ(q);
     setPlayerAnswered(false);
     setComputerAnswered(false);
     setPlayerChoice(null);
@@ -155,328 +143,315 @@ export default function Home() {
     setPlayerReaction("");
     setComputerReaction("");
     setTimer(15);
+    setLastRoundResult(null);
   }, [round, questionQueue]);
 
   useEffect(() => {
-    if (gamePhase !== "playing" || !currentQ || showResult) return;
+    if (gamePhase === "playing" && questionQueue.length > 0) {
+      nextRound();
+    }
+  }, [gamePhase, questionQueue.length, nextRound]);
 
+  useEffect(() => {
+    if (gamePhase !== "playing" || !currentQ || showResult) return;
     timerRef.current = setInterval(() => {
       setTimer((t) => {
         if (t <= 1) {
-          clearInterval(timerRef.current!);
-          handlePlayerTimeout();
+          if (timerRef.current) clearInterval(timerRef.current);
           return 0;
         }
         return t - 1;
       });
     }, 1000);
-
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [gamePhase, currentQ, showResult]);
 
-  const handlePlayerTimeout = useCallback(() => {
-    if (playerAnswered) return;
-    setPlayerAnswered(true);
-    setPlayerChoice(-1);
-    setPlayerReaction("⏰ Time's up! The computer laughs at your hesitation!");
-    setComputerReaction(getRandomItem(FUNNY_COMPUTER_REACTIONS));
-    setComputerScore((s) => s + 10);
-    setStreak(0);
-    setComboActive(false);
-    setShowResult(true);
-    roundTimerRef.current = setTimeout(nextRound, 3000);
-  }, [playerAnswered, nextRound]);
-
-  const handlePlayerAnswer = useCallback((index: number) => {
-    if (playerAnswered || !currentQ) return;
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    setPlayerAnswered(true);
-    setPlayerChoice(index);
-
-    const correct = index === currentQ.correct;
-    if (correct) {
-      const bonus = streak >= 2 ? Math.floor(streak * 2) : 0;
-      const points = 10 + bonus;
-      setPlayerScore((s) => s + points);
-      setStreak((s) => s + 1);
-      if (streak + 1 >= 2) setComboActive(true);
-      setPlayerReaction(`${getRandomItem(FUNNY_PLAYER_CORRECT)} +${points} points${bonus > 0 ? ` (${bonus} streak bonus!)` : ""}`);
-    } else {
-      setPlayerReaction(`${getRandomItem(FUNNY_PLAYER_WRONG)} ${currentQ.funnyWrong || ""}`);
-      setStreak(0);
-      setComboActive(false);
+  useEffect(() => {
+    if (timer === 0 && !playerAnswered) {
+      handlePlayerAnswer(-1);
     }
-
-    const computerDelay = getComputerAnswerSpeed();
-    computerTimerRef.current = setTimeout(() => {
-      const compCorrect = Math.random() < getComputerCorrectChance();
-      const compChoice = compCorrect ? currentQ.correct : (currentQ.correct + 1 + Math.floor(Math.random() * 3)) % 4;
-      setComputerChoice(compChoice);
-      setComputerAnswered(true);
-      if (compCorrect) {
-        setComputerScore((s) => s + 10);
-        setComputerReaction(getRandomItem(FUNNY_COMPUTER_REACTIONS));
-      } else {
-        setComputerReaction("The computer messed up! 🤖💥 HAHA!");
-      }
-      setShowResult(true);
-      roundTimerRef.current = setTimeout(nextRound, 3000);
-    }, computerDelay);
-  }, [playerAnswered, currentQ, streak, nextRound]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer]);
 
   useEffect(() => {
+    if (gamePhase !== "playing" || !currentQ || playerAnswered || showResult) return;
+    computerTimerRef.current = setTimeout(() => {
+      const isCorrect = Math.random() < getComputerCorrectChance();
+      const choice = isCorrect ? currentQ.correct : (currentQ.correct + 1 + Math.floor(Math.random() * (currentQ.options.length - 1))) % currentQ.options.length;
+      setComputerChoice(choice);
+      setComputerAnswered(true);
+      setComputerReaction(getRandomItem(FUNNY_COMPUTER_REACTIONS));
+    }, getComputerAnswerSpeed());
     return () => {
       if (computerTimerRef.current) clearTimeout(computerTimerRef.current);
-      if (roundTimerRef.current) clearTimeout(roundTimerRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+  }, [gamePhase, currentQ, playerAnswered, showResult]);
 
-  if (gamePhase === "menu") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-background via-background to-[#0a0a1a]">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-[120px]" />
-        </div>
-        <div className="relative z-10 flex flex-col items-center gap-8 text-center px-4">
-          <div className="flex items-center gap-3 animate-fade-up">
-            <Swords className="h-10 w-10 text-primary" />
-            <h1 className="text-5xl sm:text-7xl font-bold tracking-tight">
-              <span className="gradient-text">Trivia Battle</span>
-            </h1>
-          </div>
-          <p className="text-lg sm:text-xl text-muted-foreground max-w-md animate-fade-up" style={{ animationDelay: "0.15s" }}>
-            You vs. The Machine. <br />
-            Answer fast. Answer funny. <strong className="text-foreground">Crush the computer.</strong>
-          </p>
-          <div className="flex flex-col gap-3 animate-fade-up" style={{ animationDelay: "0.3s" }}>
-            <ShimmerButton onClick={startGame} className="text-lg px-10 py-4 h-auto">
-              <Swords className="mr-2 h-5 w-5" /> Start Battle!
-            </ShimmerButton>
-            <p className="text-xs text-muted-foreground">10 rounds • timed • streak bonuses • hilarious reactions</p>
-          </div>
-          <div className="grid grid-cols-3 gap-4 mt-8 w-full max-w-sm animate-fade-up" style={{ animationDelay: "0.45s" }}>
-            {[
-              { icon: Zap, label: "Fast Timer", desc: "15 sec per round" },
-              { icon: Brain, label: "Fun Trivia", desc: "Puns & jokes" },
-              { icon: Trophy, label: "Beat the Bot", desc: "Win for glory" },
-            ].map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-card/40 p-3 backdrop-blur">
-                <Icon className="h-5 w-5 text-primary" />
-                <span className="text-xs font-medium">{label}</span>
-                <span className="text-[10px] text-muted-foreground">{desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+  useEffect(() => {
+    if (playerAnswered && computerAnswered) {
+      resolveRound();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerAnswered, computerAnswered]);
+
+  function handlePlayerAnswer(choice: number) {
+    if (playerAnswered) return;
+    setPlayerChoice(choice);
+    setPlayerAnswered(true);
   }
 
-  if (gamePhase === "result") {
-    const playerWon = playerScore > computerScore;
-    const tie = playerScore === computerScore;
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-background via-background to-[#0a0a1a] p-4">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className={`absolute top-1/3 left-1/3 w-80 h-80 rounded-full blur-[100px] ${playerWon ? "bg-green-500/10" : tie ? "bg-yellow-500/10" : "bg-red-500/10"}`} />
-        </div>
-        <div className="relative z-10 flex flex-col items-center gap-6 text-center animate-fade-up">
-          <Trophy className={`h-16 w-16 ${playerWon ? "text-yellow-400" : tie ? "text-blue-400" : "text-muted-foreground"}`} />
-          <h1 className="text-4xl sm:text-5xl font-bold">
-            {playerWon ? "🏆 YOU WIN!" : tie ? "🤝 IT'S A TIE!" : "💀 THE COMPUTER WINS!"}
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            {playerWon
-              ? "Humanity prevails! The machines will remember this day."
-              : tie
-              ? "Evenly matched... for now. Rematch?"
-              : "Skynet begins... today."}
-          </p>
-          <div className="flex gap-8 items-center">
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-sm text-muted-foreground">You</span>
-              <span className="text-3xl font-bold text-primary">{playerScore}</span>
-            </div>
-            <span className="text-2xl text-muted-foreground">vs</span>
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-sm text-muted-foreground">Computer</span>
-              <span className="text-3xl font-bold text-accent">{computerScore}</span>
-            </div>
-          </div>
-          <ShimmerButton onClick={startGame} className="mt-4">
-            <RefreshCw className="mr-2 h-4 w-4" /> Play Again
-          </ShimmerButton>
-        </div>
-      </div>
-    );
+  function resolveRound() {
+    if (!currentQ) return;
+    const pCorrect = playerChoice === currentQ.correct;
+    const cCorrect = computerChoice === currentQ.correct;
+
+    let msg = "";
+    let pReact = "";
+    let cReact = "";
+    let result: "win" | "lose" | "tie" | null = null;
+
+    if (pCorrect && cCorrect) {
+      msg = `🤝 Both got it right! "${currentQ.options[currentQ.correct]}"`;
+      pReact = getRandomItem(FUNNY_PLAYER_CORRECT);
+      cReact = getRandomItem(FUNNY_COMPUTER_REACTIONS);
+      setPlayerScore((s) => s + 10 + playerStreak * 5);
+      setComputerScore((s) => s + 10 + computerStreak * 5);
+      setPlayerStreak((s) => s + 1);
+      setComputerStreak((s) => s + 1);
+      result = "tie";
+    } else if (pCorrect && !cCorrect) {
+      msg = `🎉 You got it! "${currentQ.options[currentQ.correct]}" — Computer flubbed!`;
+      pReact = getRandomItem(FUNNY_PLAYER_CORRECT);
+      cReact = getRandomItem(FUNNY_PLAYER_WRONG);
+      setPlayerScore((s) => s + 10 + playerStreak * 5);
+      setPlayerStreak((s) => s + 1);
+      setComputerStreak(0);
+      result = "win";
+    } else if (!pCorrect && cCorrect) {
+      msg = `😅 Computer knew it was "${currentQ.options[currentQ.correct]}" — you didn't!`;
+      pReact = getRandomItem(FUNNY_PLAYER_WRONG);
+      cReact = getRandomItem(FUNNY_COMPUTER_REACTIONS);
+      setComputerScore((s) => s + 10 + computerStreak * 5);
+      setComputerStreak((s) => s + 1);
+      setPlayerStreak(0);
+      result = "lose";
+    } else {
+      msg = `💥 Both wrong! The answer was "${currentQ.options[currentQ.correct]}"`;
+      pReact = getRandomItem(FUNNY_PLAYER_WRONG);
+      cReact = getRandomItem(FUNNY_PLAYER_WRONG);
+      setPlayerStreak(0);
+      setComputerStreak(0);
+      result = "tie";
+    }
+
+    if (playerChoice === -1) {
+      pReact = "⏰ Time's up! The computer got you!";
+    }
+
+    setRoundMessage(msg);
+    setPlayerReaction(pReact);
+    setComputerReaction(cReact);
+    setLastRoundResult(result);
+    setShowResult(true);
+
+    setTimeout(() => {
+      setRound((r) => r + 1);
+    }, 3000);
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background via-background to-[#0a0a1a]">
-      {/* Top bar */}
-      <header className="border-b border-white/5 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 font-semibold text-sm">
-          <Swords className="h-4 w-4 text-primary" />
-          <span className="gradient-text">Trivia Battle</span>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-muted-foreground">Round {round + 1}/10</span>
-          <div className="flex items-center gap-1">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            <span className={`font-mono ${timer <= 5 ? "text-red-400 animate-pulse" : "text-muted-foreground"}`}>{timer}s</span>
+    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white overflow-hidden">
+      {gamePhase === "menu" && (
+        <div className="flex flex-col items-center justify-center min-h-screen p-6 relative">
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {[...Array(20)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute rounded-full bg-purple-500/10 animate-pulse"
+                style={{
+                  width: `${Math.random() * 300 + 50}px`,
+                  height: `${Math.random() * 300 + 50}px`,
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 5}s`,
+                  animationDuration: `${3 + Math.random() * 4}s`,
+                }}
+              />
+            ))}
           </div>
-        </div>
-      </header>
-
-      {/* Split screen */}
-      <div className="flex flex-1 flex-col sm:flex-row">
-        {/* Player side */}
-        <div className="flex-1 border-b sm:border-b-0 sm:border-r border-white/5 p-4 sm:p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-                <Star className="h-4 w-4 text-primary" />
+          <div className="relative z-10 text-center">
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <Swords className="w-10 h-10 text-purple-400" />
+              <Trophy className="w-10 h-10 text-yellow-400" />
+              <Brain className="w-10 h-10 text-cyan-400" />
+            </div>
+            <h1 className="text-6xl md:text-8xl font-black mb-2 bg-gradient-to-r from-purple-400 via-pink-400 to-yellow-400 bg-clip-text text-transparent">
+              TRIVIA BATTLE
+            </h1>
+            <p className="text-xl text-purple-300/80 mb-8">You vs The Computer — who's funnier AND smarter?</p>
+            <ShimmerButton onClick={startGame} className="text-lg px-12 py-6">
+              <Sparkles className="w-5 h-5 mr-2" />
+              Start Battle!
+            </ShimmerButton>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12 max-w-2xl mx-auto">
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+                <Zap className="w-6 h-6 text-yellow-400 mb-2" />
+                <h3 className="font-bold">15 Rounds</h3>
+                <p className="text-sm text-purple-300/70">Fast-paced trivia mayhem</p>
               </div>
-              <span className="font-semibold">You</span>
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+                <Clock className="w-6 h-6 text-cyan-400 mb-2" />
+                <h3 className="font-bold">15s Timer</h3>
+                <p className="text-sm text-purple-300/70">Think fast or lose your turn</p>
+              </div>
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+                <Star className="w-6 h-6 text-pink-400 mb-2" />
+                <h3 className="font-bold">Streak Bonuses</h3>
+                <p className="text-sm text-purple-300/70">Chain correct answers for extra points</p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {comboActive && (
-                <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full animate-pulse">
-                  🔥 x{streak}
-                </span>
-              )}
-              <span className="text-2xl font-bold text-primary">{playerScore}</span>
+          </div>
+        </div>
+      )}
+
+      {gamePhase === "playing" && currentQ && (
+        <div className="min-h-screen flex flex-col">
+          {/* Top bar — round + scores */}
+          <div className="flex items-center justify-between px-6 py-4 bg-black/30 border-b border-white/10">
+            <div className="text-center">
+              <p className="text-xs text-purple-400 uppercase tracking-wider">You</p>
+              <p className="text-3xl font-bold text-cyan-400">{playerScore}</p>
+              {playerStreak > 1 && <p className="text-xs text-yellow-400">🔥 x{playerStreak}</p>}
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-purple-300">Round {round + 1} / 10</p>
+              <div className="flex items-center gap-2 mt-1">
+                <Clock className={`w-5 h-5 ${timer <= 5 ? "text-red-400 animate-pulse" : "text-purple-400"}`} />
+                <span className={`text-2xl font-mono font-bold ${timer <= 5 ? "text-red-400" : "text-white"}`}>{timer}s</span>
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-purple-400 uppercase tracking-wider">Computer</p>
+              <p className="text-3xl font-bold text-pink-400">{computerScore}</p>
+              {computerStreak > 1 && <p className="text-xs text-yellow-400">🔥 x{computerStreak}</p>}
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center gap-4">
-            {currentQ && !showResult && (
-              <div className="animate-fade-up w-full max-w-md">
-                <div className="mb-4">
-                  <span className="text-xs text-muted-foreground bg-white/5 px-2 py-1 rounded-full">
-                    {currentQ.category || "funny"}
-                  </span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-bold mb-6 leading-snug">
-                  {currentQ.question}
-                </h2>
-                <div className="grid grid-cols-1 gap-2">
-                  {currentQ.options.map((opt, i) => (
+          {/* Question area */}
+          <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 md:p-8 border border-white/10 w-full max-w-3xl">
+              <p className="text-xs text-purple-400 uppercase tracking-wider mb-2">Question {round + 1}</p>
+              <h2 className="text-2xl md:text-3xl font-bold mb-6">{currentQ.question}</h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {currentQ.options.map((opt, idx) => {
+                  let btnClass = "bg-white/5 hover:bg-white/10 border border-white/10 hover:border-purple-500/50 text-left";
+                  if (playerAnswered && showResult) {
+                    if (idx === currentQ.correct) btnClass = "bg-green-600/30 border-green-500 text-green-300";
+                    else if (idx === playerChoice && playerChoice !== currentQ.correct) btnClass = "bg-red-600/30 border-red-500 text-red-300";
+                  } else if (playerAnswered && idx === playerChoice) {
+                    btnClass = "bg-purple-600/30 border-purple-500";
+                  }
+                  return (
                     <button
-                      key={i}
-                      onClick={() => handlePlayerAnswer(i)}
+                      key={idx}
                       disabled={playerAnswered}
-                      className={`group relative overflow-hidden rounded-xl border p-3 sm:p-4 text-left text-sm sm:text-base transition-all duration-200 ${
-                        playerAnswered
-                          ? i === currentQ.correct
-                            ? "border-green-500/60 bg-green-500/10"
-                            : i === playerChoice
-                            ? "border-red-500/60 bg-red-500/10"
-                            : "border-white/5 opacity-50"
-                          : "border-white/10 hover:border-primary/50 hover:bg-primary/5 hover:-translate-y-0.5 cursor-pointer"
-                      }`}
+                      onClick={() => handlePlayerAnswer(idx)}
+                      className={`p-4 rounded-xl transition-all duration-200 font-medium ${btnClass}`}
                     >
-                      <span className="text-xs text-muted-foreground mr-2">{String.fromCharCode(65 + i)}.</span>
+                      <span className="text-purple-400 mr-2">{String.fromCharCode(65 + idx)}.</span>
                       {opt}
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )}
-
-            {showResult && playerReaction && (
-              <div className="animate-fade-up text-center">
-                <p className="text-lg font-medium mb-1">{playerReaction}</p>
-                {playerChoice === currentQ?.correct && playerChoice >= 0 && (
-                  <p className="text-green-400 text-sm">✅ Correct!</p>
-                )}
-                {playerChoice !== currentQ?.correct && playerChoice >= 0 && (
-                  <p className="text-red-400 text-sm">❌ Wrong! The answer was: {currentQ?.options[currentQ.correct]}</p>
-                )}
-                {playerChoice === -1 && (
-                  <p className="text-yellow-400 text-sm">⏰ Ran out of time!</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Computer side */}
-        <div className="flex-1 p-4 sm:p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center">
-                <Brain className="h-4 w-4 text-accent" />
-              </div>
-              <span className="font-semibold">Computer</span>
             </div>
-            <span className="text-2xl font-bold text-accent">{computerScore}</span>
+
+            {/* Reactions */}
+            {showResult && (
+              <div className="mt-6 w-full max-w-3xl space-y-3 animate-fade-in">
+                <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-xl p-4">
+                  <p className="text-sm text-cyan-400 font-semibold">🧑 You</p>
+                  <p className="text-lg">{playerReaction}</p>
+                </div>
+                <div className="bg-pink-900/20 border border-pink-500/30 rounded-xl p-4">
+                  <p className="text-sm text-pink-400 font-semibold">🤖 Computer</p>
+                  <p className="text-lg">{computerReaction}</p>
+                </div>
+                <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4 text-center">
+                  <p className="text-lg font-bold">{roundMessage}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Waiting / thinking indicator */}
+            {!showResult && (
+              <div className="mt-6 flex gap-8 text-sm text-purple-400">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${playerAnswered ? "bg-green-400" : "bg-purple-500 animate-pulse"}`} />
+                  {playerAnswered ? "Answered" : "Your turn..."}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${computerAnswered ? "bg-green-400" : "bg-pink-500 animate-pulse"}`} />
+                  {computerAnswered ? "Answered" : "Computer thinking..."}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center gap-4">
-            {currentQ && (
-              <div className="animate-fade-up w-full max-w-md">
-                <div className="mb-4">
-                  <span className="text-xs text-muted-foreground bg-white/5 px-2 py-1 rounded-full">
-                    {currentQ.category || "funny"}
-                  </span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-bold mb-6 leading-snug opacity-60">
-                  {currentQ.question}
-                </h2>
-                <div className="grid grid-cols-1 gap-2">
-                  {currentQ.options.map((opt, i) => (
-                    <div
-                      key={i}
-                      className={`rounded-xl border p-3 sm:p-4 text-left text-sm sm:text-base transition-all duration-500 ${
-                        computerAnswered
-                          ? i === currentQ.correct
-                            ? "border-green-500/60 bg-green-500/10"
-                            : i === computerChoice
-                            ? "border-red-500/60 bg-red-500/10"
-                            : "border-white/5 opacity-30"
-                          : computerChoice === null && playerAnswered
-                          ? "border-white/10 animate-pulse"
-                          : "border-white/5"
-                      }`}
-                    >
-                      <span className="text-xs text-muted-foreground mr-2">{String.fromCharCode(65 + i)}.</span>
-                      {opt}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {showResult && computerReaction && (
-              <div className="animate-fade-up text-center">
-                <p className="text-lg font-medium">{computerReaction}</p>
-              </div>
-            )}
-
-            {!computerAnswered && playerAnswered && !showResult && (
-              <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
-                <Brain className="h-4 w-4" />
-                <span className="text-sm">Computer is thinking...</span>
-              </div>
-            )}
+          {/* Bottom split-screen visual */}
+          <div className="h-2 flex">
+            <div className="flex-1 bg-gradient-to-r from-cyan-500/20 to-purple-500/20" />
+            <div className="w-px bg-white/20" />
+            <div className="flex-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20" />
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Bottom bar */}
-      <div className="border-t border-white/5 px-4 py-2 flex items-center justify-between text-xs text-muted-foreground">
-        <span>Streak: {streak}x</span>
-        <span className="hidden sm:inline">Answer fast for streak bonuses!</span>
-        <Button variant="ghost" className="h-7 text-xs" onClick={() => setGamePhase("menu")}>
-          Quit
-        </Button>
-      </div>
-    </div>
+      {gamePhase === "result" && (
+        <div className="flex flex-col items-center justify-center min-h-screen p-6">
+          <div className="text-center max-w-lg">
+            <Trophy className={`w-20 h-20 mx-auto mb-4 ${playerScore > computerScore ? "text-yellow-400" : playerScore < computerScore ? "text-slate-500" : "text-purple-400"}`} />
+            <h1 className="text-5xl font-black mb-2">
+              {playerScore > computerScore && "🏆 YOU WIN! 🏆"}
+              {playerScore < computerScore && "💻 COMPUTER WINS! 💻"}
+              {playerScore === computerScore && "🤝 IT'S A TIE! 🤝"}
+            </h1>
+            <p className="text-xl text-purple-300/80 mb-6">
+              {playerScore > computerScore && "You've proven humanity's superiority... for now."}
+              {playerScore < computerScore && "The machines are taking over! Soon."}
+              {playerScore === computerScore && "Evenly matched! Rematch?"}
+            </p>
+            <div className="flex items-center justify-center gap-8 mb-8">
+              <div className="text-center">
+                <p className="text-sm text-purple-400">You</p>
+                <p className="text-5xl font-bold text-cyan-400">{playerScore}</p>
+              </div>
+              <div className="text-3xl text-purple-500">VS</div>
+              <div className="text-center">
+                <p className="text-sm text-purple-400">Computer</p>
+                <p className="text-5xl font-bold text-pink-400">{computerScore}</p>
+              </div>
+            </div>
+            <ShimmerButton onClick={startGame} className="text-lg px-10 py-5">
+              <RefreshCw className="w-5 h-5 mr-2" />
+              Play Again
+            </ShimmerButton>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.5s ease-out;
+        }
+      `}</style>
+    </main>
   );
 }
