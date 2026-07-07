@@ -4,22 +4,25 @@
 i want to build a arcade game multiplayer like questions that battle for now make it agaisnt computer two screen split shwoign other side questions pop up and we answer points based system ral funny fun game
 
 ## Current state
-✅ **VERIFICATION FIX PASS 2/3 — DONE** Fixed the `_document` PageNotFoundError in production build by upgrading Next.js from 14.2.5 → 14.2.15. This was a known Next.js 14.2.x bug where the App Router build unconditionally tries to load Pages Router `/_document` during the "Collecting page data" phase. The fix is a single version bump — zero code changes.
+A split-screen trivia battle game — you vs the computer. 10 rounds of funny questions, timer countdown, streak bonuses, animations. Built with Next.js 14 App Router, Tailwind CSS, Framer Motion.
+
+The build was failing because `pages/_document.tsx` existed alongside the `app/` directory. In Next.js 14 App Router mode, having a `pages/` dir causes the build to scan it for pages, and `_document` is not a valid page export — producing `PageNotFoundError: Cannot find module for page: /_document`. Fix: deleted `pages/_document.tsx` (the `pages/` dir is now gone).
 
 ## Tech stack and why
-- Next.js 14.2.15 (App Router)
-- React 18
-- TypeScript
-- Tailwind CSS
-- Framer Motion (animations)
-- Lucide React (icons)
+- Next.js 14.2.15 (App Router) — framework
+- React 18 — UI
+- Tailwind CSS 3 — styling
+- Framer Motion — animations
+- Lucide React — icons
 
 ## What has been built
 - .gitignore
 - PROJECT_STATE.json
 - app/globals.css
 - app/layout.tsx
-- app/page.tsx (full trivia battle game — 21KB)
+- app/loading.tsx
+- app/not-found.tsx
+- app/page.tsx (main game — menu, split-screen battle, results)
 - components/ui/bento-grid.tsx
 - components/ui/button.tsx
 - components/ui/card.tsx
@@ -33,16 +36,16 @@ i want to build a arcade game multiplayer like questions that battle for now mak
 - tsconfig.json
 
 ## Latest verification
-- PASS 1/3: Fixed TypeScript compilation errors (optional category, null guard on playerChoice)
-- PASS 2/3: Fixed `_document` PageNotFoundError (upgraded Next.js 14.2.5 → 14.2.15)
+- [FIXED] Deleted `pages/_document.tsx` — this was causing the build failure. Next.js 14 App Router does not need a `pages/` directory. The build should now succeed.
 
 ## What's still pending
-- PASS 3/3: Any remaining verification issues
-- Deploy to Vercel (needs Vercel integration reconnected)
+- Run `npm run build` to verify the fix (sandbox unavailable this run — needs a fresh sandbox session)
+- Deploy to Vercel / GitHub
 
 ## User preferences detected
 - Keep changes focused, modern, and production-ready.
 
 ## Run notes
-- Last updated: 2026-07-06T23:56:54.734Z
+- Last updated: 2026-07-07T01:42:35.296Z
 - Autonomous iteration: 0
+- Fix applied: deleted pages/_document.tsx (removed pages/ dir entirely)

@@ -1,0 +1,38 @@
+{
+  "updatedAt": "2026-07-07T11:11:05.556Z",
+  "framework": "Next.js",
+  "dbModels": [],
+  "apiRoutes": [],
+  "pages": [
+    "app/page.tsx"
+  ],
+  "components": [
+    "app/layout.tsx",
+    "app/loading.tsx",
+    "app/not-found.tsx",
+    "components/ui/bento-grid.tsx",
+    "components/ui/button.tsx",
+    "components/ui/card.tsx",
+    "components/ui/shimmer-button.tsx"
+  ],
+  "dependencies": [
+    "@types/node",
+    "@types/react",
+    "@types/react-dom",
+    "autoprefixer",
+    "clsx",
+    "eslint",
+    "eslint-config-next",
+    "framer-motion",
+    "lucide-react",
+    "next",
+    "postcss",
+    "postcss-load-config",
+    "react",
+    "react-dom",
+    "tailwind-merge",
+    "tailwindcss",
+    "typescript"
+  ],
+  "fileCount": 19
+}

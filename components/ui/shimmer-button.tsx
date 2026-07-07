@@ -1,19 +1,31 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export const ShimmerButton = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(
-  ({ className, children, ...props }, ref) => (
-    <button
-      ref={ref}
-      className={cn(
-        "group relative inline-flex h-11 items-center justify-center overflow-hidden rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50",
-        className,
-      )}
-      {...props}
-    >
-      <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-      <span className="relative z-10 inline-flex items-center">{children}</span>
-    </button>
-  ),
+export interface ShimmerButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  size?: "sm" | "md" | "lg";
+}
+
+const ShimmerButton = React.forwardRef<HTMLButtonElement, ShimmerButtonProps>(
+  ({ className, size = "md", children, ...props }, ref) => {
+    return (
+      <button
+        className={cn(
+          "inline-flex items-center justify-center rounded-lg font-medium text-white transition-all duration-300",
+          "bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-600 bg-[length:200%_100%] animate-pulse-glow",
+          "hover:scale-105 active:scale-95",
+          size === "sm" && "h-9 px-4 text-sm",
+          size === "md" && "h-11 px-6 text-base",
+          size === "lg" && "h-13 px-8 text-lg",
+          className
+        )}
+        ref={ref}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
 );
 ShimmerButton.displayName = "ShimmerButton";
+
+export { ShimmerButton };

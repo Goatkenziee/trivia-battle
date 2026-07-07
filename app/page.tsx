@@ -11,7 +11,6 @@ type Question = {
   options: string[];
   correct: number;
   funnyWrong?: string;
-  category?: string;
 };
 
 const QUESTIONS: Question[] = [
@@ -85,13 +84,14 @@ function getRandomItem<T>(arr: T[]): T {
 }
 
 function getComputerAnswerSpeed(): number {
-  const base = 2000 + Math.random() * 3000;
-  return Math.floor(base);
+  return Math.floor(2000 + Math.random() * 3000);
 }
 
 function getComputerCorrectChance(): number {
   return 0.55 + Math.random() * 0.2;
 }
+
+const TOTAL_ROUNDS = 10;
 
 export default function Home() {
   const [gamePhase, setGamePhase] = useState<"menu" | "playing" | "result">("menu");
@@ -111,347 +111,413 @@ export default function Home() {
   const [questionQueue, setQuestionQueue] = useState<Question[]>([]);
   const [playerStreak, setPlayerStreak] = useState(0);
   const [computerStreak, setComputerStreak] = useState(0);
-  const [lastRoundResult, setLastRoundResult] = useState<"win" | "lose" | "tie" | null>(null);
+  const [playerCorrectCount, setPlayerCorrectCount] = useState(0);
+  const [computerCorrectCount, setComputerCorrectCount] = useState(0);
+  const [roundsHistory, setRoundsHistory] = useState<string[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const computerTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const startGame = useCallback(() => {
-    const shuffled = shuffleArray(QUESTIONS);
+    const shuffled = shuffleArray(QUESTIONS).slice(0, TOTAL_ROUNDS);
     setQuestionQueue(shuffled);
     setRound(0);
     setPlayerScore(0);
     setComputerScore(0);
     setPlayerStreak(0);
     setComputerStreak(0);
+    setPlayerCorrectCount(0);
+    setComputerCorrectCount(0);
+    setRoundsHistory([]);
     setGamePhase("playing");
-  }, []);
-
-  const nextRound = useCallback(() => {
-    if (round >= 10) {
-      setGamePhase("result");
-      return;
-    }
-    const q = questionQueue[round];
-    if (!q) return;
-    setCurrentQ(q);
+    setCurrentQ(shuffled[0]);
     setPlayerAnswered(false);
     setComputerAnswered(false);
     setPlayerChoice(null);
     setComputerChoice(null);
     setShowResult(false);
-    setRoundMessage("");
+    setTimer(15);
+  }, []);
+
+  const nextRound = useCallback(() => {
+    const nextRoundNum = round + 1;
+    if (nextRoundNum >= TOTAL_ROUNDS || nextRoundNum >= questionQueue.length) {
+      setGamePhase("result");
+      return;
+    }
+    setRound(nextRoundNum);
+    setCurrentQ(questionQueue[nextRoundNum]);
+    setPlayerAnswered(false);
+    setComputerAnswered(false);
+    setPlayerChoice(null);
+    setComputerChoice(null);
+    setShowResult(false);
+    setTimer(15);
     setPlayerReaction("");
     setComputerReaction("");
-    setTimer(15);
-    setLastRoundResult(null);
+    setRoundMessage("");
   }, [round, questionQueue]);
 
-  useEffect(() => {
-    if (gamePhase === "playing" && questionQueue.length > 0) {
-      nextRound();
+  const handlePlayerAnswer = useCallback((choiceIndex: number) => {
+    if (playerAnswered || !currentQ) return;
+    setPlayerChoice(choiceIndex);
+    setPlayerAnswered(true);
+
+    const isCorrect = choiceIndex === currentQ.correct;
+    if (isCorrect) {
+      const streakBonus = Math.min(playerStreak, 5);
+      const points = 100 + streakBonus * 50;
+      setPlayerScore((s) => s + points);
+      setPlayerStreak((s) => s + 1);
+      setPlayerCorrectCount((c) => c + 1);
+      setPlayerReaction(getRandomItem(FUNNY_PLAYER_CORRECT));
+    } else {
+      setPlayerStreak(0);
+      setPlayerReaction(getRandomItem(FUNNY_PLAYER_WRONG));
     }
-  }, [gamePhase, questionQueue.length, nextRound]);
+  }, [playerAnswered, currentQ, playerStreak]);
 
+  // Computer AI answers after a delay
   useEffect(() => {
-    if (gamePhase !== "playing" || !currentQ || showResult) return;
-    timerRef.current = setInterval(() => {
-      setTimer((t) => {
-        if (t <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [gamePhase, currentQ, showResult]);
+    if (gamePhase !== "playing" || computerAnswered || !currentQ) return;
 
-  useEffect(() => {
-    if (timer === 0 && !playerAnswered) {
-      handlePlayerAnswer(-1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timer]);
-
-  useEffect(() => {
-    if (gamePhase !== "playing" || !currentQ || playerAnswered || showResult) return;
+    const speed = getComputerAnswerSpeed();
     computerTimerRef.current = setTimeout(() => {
       const isCorrect = Math.random() < getComputerCorrectChance();
-      const choice = isCorrect ? currentQ.correct : (currentQ.correct + 1 + Math.floor(Math.random() * (currentQ.options.length - 1))) % currentQ.options.length;
+      const choice = isCorrect ? currentQ.correct : (currentQ.correct + 1 + Math.floor(Math.random() * 3)) % 4;
       setComputerChoice(choice);
       setComputerAnswered(true);
-      setComputerReaction(getRandomItem(FUNNY_COMPUTER_REACTIONS));
-    }, getComputerAnswerSpeed());
+
+      if (choice === currentQ.correct) {
+        const streakBonus = Math.min(computerStreak, 5);
+        const points = 100 + streakBonus * 50;
+        setComputerScore((s) => s + points);
+        setComputerStreak((s) => s + 1);
+        setComputerCorrectCount((c) => c + 1);
+        setComputerReaction(getRandomItem(FUNNY_COMPUTER_REACTIONS));
+      } else {
+        setComputerStreak(0);
+        setComputerReaction("Wait, what?! The computer got it WRONG?! 🤯");
+      }
+    }, speed);
+
     return () => {
       if (computerTimerRef.current) clearTimeout(computerTimerRef.current);
     };
-  }, [gamePhase, currentQ, playerAnswered, showResult]);
+  }, [gamePhase, computerAnswered, currentQ, computerStreak]);
 
+  // Timer countdown
   useEffect(() => {
-    if (playerAnswered && computerAnswered) {
-      resolveRound();
+    if (gamePhase !== "playing" || showResult) return;
+    if (timer <= 0) {
+      if (!playerAnswered) {
+        setPlayerAnswered(true);
+        setPlayerChoice(-1);
+        setPlayerStreak(0);
+        setPlayerReaction("TIME'S UP! ⏰💀");
+      }
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerAnswered, computerAnswered]);
+    const t = setTimeout(() => setTimer((t) => t - 1), 1000);
+    return () => clearTimeout(t);
+  }, [gamePhase, timer, playerAnswered, showResult]);
 
-  function handlePlayerAnswer(choice: number) {
-    if (playerAnswered) return;
-    setPlayerChoice(choice);
-    setPlayerAnswered(true);
-  }
-
-  function resolveRound() {
-    if (!currentQ) return;
-    const pCorrect = playerChoice === currentQ.correct;
-    const cCorrect = computerChoice === currentQ.correct;
-
-    let msg = "";
-    let pReact = "";
-    let cReact = "";
-    let result: "win" | "lose" | "tie" | null = null;
-
-    if (pCorrect && cCorrect) {
-      msg = `🤝 Both got it right! "${currentQ.options[currentQ.correct]}"`;
-      pReact = getRandomItem(FUNNY_PLAYER_CORRECT);
-      cReact = getRandomItem(FUNNY_COMPUTER_REACTIONS);
-      setPlayerScore((s) => s + 10 + playerStreak * 5);
-      setComputerScore((s) => s + 10 + computerStreak * 5);
-      setPlayerStreak((s) => s + 1);
-      setComputerStreak((s) => s + 1);
-      result = "tie";
-    } else if (pCorrect && !cCorrect) {
-      msg = `🎉 You got it! "${currentQ.options[currentQ.correct]}" — Computer flubbed!`;
-      pReact = getRandomItem(FUNNY_PLAYER_CORRECT);
-      cReact = getRandomItem(FUNNY_PLAYER_WRONG);
-      setPlayerScore((s) => s + 10 + playerStreak * 5);
-      setPlayerStreak((s) => s + 1);
-      setComputerStreak(0);
-      result = "win";
-    } else if (!pCorrect && cCorrect) {
-      msg = `😅 Computer knew it was "${currentQ.options[currentQ.correct]}" — you didn't!`;
-      pReact = getRandomItem(FUNNY_PLAYER_WRONG);
-      cReact = getRandomItem(FUNNY_COMPUTER_REACTIONS);
-      setComputerScore((s) => s + 10 + computerStreak * 5);
-      setComputerStreak((s) => s + 1);
-      setPlayerStreak(0);
-      result = "lose";
-    } else {
-      msg = `💥 Both wrong! The answer was "${currentQ.options[currentQ.correct]}"`;
-      pReact = getRandomItem(FUNNY_PLAYER_WRONG);
-      cReact = getRandomItem(FUNNY_PLAYER_WRONG);
-      setPlayerStreak(0);
-      setComputerStreak(0);
-      result = "tie";
-    }
-
-    if (playerChoice === -1) {
-      pReact = "⏰ Time's up! The computer got you!";
-    }
-
-    setRoundMessage(msg);
-    setPlayerReaction(pReact);
-    setComputerReaction(cReact);
-    setLastRoundResult(result);
+  // Show round result when both answered
+  useEffect(() => {
+    if (!playerAnswered || !computerAnswered || showResult || !currentQ) return;
     setShowResult(true);
 
-    setTimeout(() => {
-      setRound((r) => r + 1);
-    }, 3000);
+    const playerCorrect = playerChoice === currentQ.correct;
+    const computerCorrect = computerChoice === currentQ.correct;
+
+    let msg = "";
+    if (playerCorrect && computerCorrect) msg = "🔥 Both got it right!";
+    else if (playerCorrect && !computerCorrect) msg = "🎉 You beat the computer this round!";
+    else if (!playerCorrect && computerCorrect) msg = "😤 The computer got one over on you!";
+    else msg = "💀 Both wrong! Oof.";
+
+    setRoundMessage(msg);
+    setRoundsHistory((h) => [...h, msg]);
+
+    const t = setTimeout(() => nextRound(), 2500);
+    return () => clearTimeout(t);
+  }, [playerAnswered, computerAnswered, showResult, currentQ, playerChoice, computerChoice, nextRound]);
+
+  // Menu screen
+  if (gamePhase === "menu") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 flex flex-col items-center justify-center p-4 overflow-hidden relative">
+        {/* Background particles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {Array.from({ length: 30 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-1 bg-blue-400/30 rounded-full"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animation: `fade-up ${2 + Math.random() * 3}s ease-in-out infinite`,
+                animationDelay: `${Math.random() * 2}s`,
+              }}
+            />
+          ))}
+        </div>
+
+        <div className="relative z-10 text-center max-w-2xl">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Swords className="w-10 h-10 text-yellow-400" />
+            <Brain className="w-10 h-10 text-blue-400" />
+          </div>
+          <h1 className="text-6xl md:text-7xl font-extrabold mb-2 bg-gradient-to-r from-yellow-300 via-orange-400 to-pink-500 bg-clip-text text-transparent">
+            TRIVIA BATTLE
+          </h1>
+          <p className="text-xl text-blue-200/70 mb-2">You vs The Computer</p>
+          <p className="text-sm text-gray-400 mb-8">A split-screen trivia showdown with funny roasts & streak bonuses</p>
+
+          <div className="grid grid-cols-2 gap-4 mb-8 text-left">
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-blue-300 font-semibold mb-1">
+                <Zap className="w-4 h-4" /> Streak Bonus
+              </div>
+              <p className="text-xs text-gray-400">Get consecutive right answers for +50 extra points per streak!</p>
+            </div>
+            <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-purple-300 font-semibold mb-1">
+                <Clock className="w-4 h-4" /> 15-Second Timer
+              </div>
+              <p className="text-xs text-gray-400">Answer before time runs out or you get roasted!</p>
+            </div>
+            <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-green-300 font-semibold mb-1">
+                <Star className="w-4 h-4" /> 10 Rounds
+              </div>
+              <p className="text-xs text-gray-400">First to dominate 10 hilarious trivia questions wins!</p>
+            </div>
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-yellow-300 font-semibold mb-1">
+                <Brain className="w-4 h-4" /> Computer AI
+              </div>
+              <p className="text-xs text-gray-400">The computer thinks before answering — and it taunts you!</p>
+            </div>
+          </div>
+
+          <ShimmerButton size="lg" onClick={startGame} className="text-lg px-12 py-4">
+            <Swords className="w-5 h-5 mr-2" />
+            START BATTLE
+          </ShimmerButton>
+        </div>
+      </div>
+    );
   }
 
-  return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white overflow-hidden">
-      {gamePhase === "menu" && (
-        <div className="flex flex-col items-center justify-center min-h-screen p-6 relative">
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {[...Array(20)].map((_, i) => (
-              <div
-                key={i}
-                className="absolute rounded-full bg-purple-500/10 animate-pulse"
-                style={{
-                  width: `${Math.random() * 300 + 50}px`,
-                  height: `${Math.random() * 300 + 50}px`,
-                  left: `${Math.random() * 100}%`,
-                  top: `${Math.random() * 100}%`,
-                  animationDelay: `${Math.random() * 5}s`,
-                  animationDuration: `${3 + Math.random() * 4}s`,
-                }}
-              />
+  // Result screen
+  if (gamePhase === "result") {
+    const playerWon = playerScore > computerScore;
+    const tie = playerScore === computerScore;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 flex flex-col items-center justify-center p-4">
+        <div className="text-center max-w-lg">
+          <Trophy className={`w-20 h-20 mx-auto mb-4 ${playerWon ? "text-yellow-400" : tie ? "text-gray-400" : "text-red-400"}`} />
+          <h1 className="text-5xl font-extrabold mb-2">
+            {playerWon ? (
+              <span className="bg-gradient-to-r from-yellow-300 to-orange-400 bg-clip-text text-transparent">YOU WIN! 🏆</span>
+            ) : tie ? (
+              <span className="text-gray-300">IT'S A TIE! 🤝</span>
+            ) : (
+              <span className="text-red-400">COMPUTER WINS! 💻</span>
+            )}
+          </h1>
+          <p className="text-gray-400 mb-6">
+            {playerWon
+              ? "The human race is safe... for now."
+              : tie
+              ? "You and the machine are evenly matched!"
+              : "Skynet begins here..."}
+          </p>
+
+          <div className="grid grid-cols-2 gap-6 mb-8">
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
+              <p className="text-sm text-blue-300 mb-1">🧑 YOU</p>
+              <p className="text-4xl font-bold text-blue-400">{playerScore}</p>
+              <p className="text-xs text-gray-500 mt-1">{playerCorrectCount}/{TOTAL_ROUNDS} correct</p>
+              {playerStreak > 1 && <p className="text-xs text-yellow-400">Best streak: {playerStreak}</p>}
+            </div>
+            <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6">
+              <p className="text-sm text-red-300 mb-1">🤖 COMPUTER</p>
+              <p className="text-4xl font-bold text-red-400">{computerScore}</p>
+              <p className="text-xs text-gray-500 mt-1">{computerCorrectCount}/{TOTAL_ROUNDS} correct</p>
+              {computerStreak > 1 && <p className="text-xs text-yellow-400">Best streak: {computerStreak}</p>}
+            </div>
+          </div>
+
+          <div className="bg-white/5 rounded-xl p-4 mb-8 max-h-32 overflow-y-auto text-left">
+            <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Round History</p>
+            {roundsHistory.map((msg, i) => (
+              <p key={i} className="text-sm text-gray-300 mb-1">
+                <span className="text-gray-500">R{i + 1}:</span> {msg}
+              </p>
             ))}
           </div>
-          <div className="relative z-10 text-center">
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <Swords className="w-10 h-10 text-purple-400" />
-              <Trophy className="w-10 h-10 text-yellow-400" />
-              <Brain className="w-10 h-10 text-cyan-400" />
-            </div>
-            <h1 className="text-6xl md:text-8xl font-black mb-2 bg-gradient-to-r from-purple-400 via-pink-400 to-yellow-400 bg-clip-text text-transparent">
-              TRIVIA BATTLE
-            </h1>
-            <p className="text-xl text-purple-300/80 mb-8">You vs The Computer — who's funnier AND smarter?</p>
-            <ShimmerButton onClick={startGame} className="text-lg px-12 py-6">
-              <Sparkles className="w-5 h-5 mr-2" />
-              Start Battle!
-            </ShimmerButton>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12 max-w-2xl mx-auto">
-              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-                <Zap className="w-6 h-6 text-yellow-400 mb-2" />
-                <h3 className="font-bold">15 Rounds</h3>
-                <p className="text-sm text-purple-300/70">Fast-paced trivia mayhem</p>
-              </div>
-              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-                <Clock className="w-6 h-6 text-cyan-400 mb-2" />
-                <h3 className="font-bold">15s Timer</h3>
-                <p className="text-sm text-purple-300/70">Think fast or lose your turn</p>
-              </div>
-              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-                <Star className="w-6 h-6 text-pink-400 mb-2" />
-                <h3 className="font-bold">Streak Bonuses</h3>
-                <p className="text-sm text-purple-300/70">Chain correct answers for extra points</p>
-              </div>
-            </div>
+
+          <ShimmerButton size="lg" onClick={startGame}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            PLAY AGAIN
+          </ShimmerButton>
+        </div>
+      </div>
+    );
+  }
+
+  // Playing screen — SPLIT SCREEN
+  const playerCorrect = playerAnswered && playerChoice === currentQ?.correct;
+  const computerCorrect = computerAnswered && computerChoice === currentQ?.correct;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 flex flex-col">
+      {/* Top bar: round + scores */}
+      <div className="flex items-center justify-between px-4 py-3 bg-black/30 border-b border-white/5">
+        <div className="text-sm text-gray-400">
+          Round <span className="text-white font-bold">{round + 1}</span>/{TOTAL_ROUNDS}
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-400 font-bold text-lg">{playerScore}</span>
+            <span className="text-xs text-gray-500">YOU</span>
+          </div>
+          <div className="w-16 h-1 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+              style={{ width: `${(playerScore / Math.max(playerScore + computerScore, 1)) * 100}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">CPU</span>
+            <span className="text-red-400 font-bold text-lg">{computerScore}</span>
           </div>
         </div>
-      )}
+        <div className="flex items-center gap-1 text-sm">
+          <Clock className="w-4 h-4 text-yellow-400" />
+          <span className={`font-mono font-bold ${timer <= 5 ? "text-red-400 animate-pulse" : "text-yellow-400"}`}>
+            {timer}s
+          </span>
+        </div>
+      </div>
 
-      {gamePhase === "playing" && currentQ && (
-        <div className="min-h-screen flex flex-col">
-          {/* Top bar — round + scores */}
-          <div className="flex items-center justify-between px-6 py-4 bg-black/30 border-b border-white/10">
-            <div className="text-center">
-              <p className="text-xs text-purple-400 uppercase tracking-wider">You</p>
-              <p className="text-3xl font-bold text-cyan-400">{playerScore}</p>
-              {playerStreak > 1 && <p className="text-xs text-yellow-400">🔥 x{playerStreak}</p>}
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-purple-300">Round {round + 1} / 10</p>
-              <div className="flex items-center gap-2 mt-1">
-                <Clock className={`w-5 h-5 ${timer <= 5 ? "text-red-400 animate-pulse" : "text-purple-400"}`} />
-                <span className={`text-2xl font-mono font-bold ${timer <= 5 ? "text-red-400" : "text-white"}`}>{timer}s</span>
-              </div>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-purple-400 uppercase tracking-wider">Computer</p>
-              <p className="text-3xl font-bold text-pink-400">{computerScore}</p>
-              {computerStreak > 1 && <p className="text-xs text-yellow-400">🔥 x{computerStreak}</p>}
-            </div>
+      {/* SPLIT SCREEN — two halves */}
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0">
+        {/* PLAYER SIDE */}
+        <div className="relative flex flex-col items-center justify-center p-6 border-r border-white/5 bg-gradient-to-b from-blue-950/40 to-transparent">
+          <div className="absolute top-3 left-3 flex items-center gap-2">
+            <Brain className="w-5 h-5 text-blue-400" />
+            <span className="text-sm font-semibold text-blue-300">🧑 YOU</span>
           </div>
+          {playerStreak >= 2 && (
+            <div className="absolute top-3 right-3 bg-yellow-500/20 border border-yellow-500/30 rounded-full px-3 py-1 text-xs text-yellow-300 animate-pulse">
+              🔥 {playerStreak}x Streak!
+            </div>
+          )}
 
-          {/* Question area */}
-          <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
-            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 md:p-8 border border-white/10 w-full max-w-3xl">
-              <p className="text-xs text-purple-400 uppercase tracking-wider mb-2">Question {round + 1}</p>
-              <h2 className="text-2xl md:text-3xl font-bold mb-6">{currentQ.question}</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {!showResult && currentQ && (
+            <div className="w-full max-w-lg">
+              <p className="text-lg md:text-xl font-semibold text-center text-white mb-6 min-h-[3rem]">
+                {currentQ.question}
+              </p>
+              <div className="grid grid-cols-1 gap-3">
                 {currentQ.options.map((opt, idx) => {
-                  let btnClass = "bg-white/5 hover:bg-white/10 border border-white/10 hover:border-purple-500/50 text-left";
-                  if (playerAnswered && showResult) {
-                    if (idx === currentQ.correct) btnClass = "bg-green-600/30 border-green-500 text-green-300";
-                    else if (idx === playerChoice && playerChoice !== currentQ.correct) btnClass = "bg-red-600/30 border-red-500 text-red-300";
-                  } else if (playerAnswered && idx === playerChoice) {
-                    btnClass = "bg-purple-600/30 border-purple-500";
+                  let btnClass = "bg-white/5 border border-white/10 hover:bg-white/10 hover:border-blue-400/50 text-white";
+                  if (playerAnswered) {
+                    if (idx === currentQ.correct) btnClass = "bg-green-500/20 border-green-400 text-green-300";
+                    else if (idx === playerChoice && idx !== currentQ.correct) btnClass = "bg-red-500/20 border-red-400 text-red-300";
+                    else btnClass = "bg-white/5 border-white/5 text-gray-500";
                   }
                   return (
                     <button
                       key={idx}
                       disabled={playerAnswered}
                       onClick={() => handlePlayerAnswer(idx)}
-                      className={`p-4 rounded-xl transition-all duration-200 font-medium ${btnClass}`}
+                      className={`${btnClass} rounded-xl p-4 text-left font-medium transition-all duration-200 border ${
+                        !playerAnswered ? "hover:scale-[1.02] active:scale-[0.98]" : ""
+                      }`}
                     >
-                      <span className="text-purple-400 mr-2">{String.fromCharCode(65 + idx)}.</span>
+                      <span className="text-xs text-gray-500 mr-2">{String.fromCharCode(65 + idx)}.</span>
                       {opt}
                     </button>
                   );
                 })}
               </div>
             </div>
+          )}
 
-            {/* Reactions */}
-            {showResult && (
-              <div className="mt-6 w-full max-w-3xl space-y-3 animate-fade-in">
-                <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-xl p-4">
-                  <p className="text-sm text-cyan-400 font-semibold">🧑 You</p>
-                  <p className="text-lg">{playerReaction}</p>
-                </div>
-                <div className="bg-pink-900/20 border border-pink-500/30 rounded-xl p-4">
-                  <p className="text-sm text-pink-400 font-semibold">🤖 Computer</p>
-                  <p className="text-lg">{computerReaction}</p>
-                </div>
-                <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4 text-center">
-                  <p className="text-lg font-bold">{roundMessage}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Waiting / thinking indicator */}
-            {!showResult && (
-              <div className="mt-6 flex gap-8 text-sm text-purple-400">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${playerAnswered ? "bg-green-400" : "bg-purple-500 animate-pulse"}`} />
-                  {playerAnswered ? "Answered" : "Your turn..."}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${computerAnswered ? "bg-green-400" : "bg-pink-500 animate-pulse"}`} />
-                  {computerAnswered ? "Answered" : "Computer thinking..."}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom split-screen visual */}
-          <div className="h-2 flex">
-            <div className="flex-1 bg-gradient-to-r from-cyan-500/20 to-purple-500/20" />
-            <div className="w-px bg-white/20" />
-            <div className="flex-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20" />
-          </div>
+          {/* Player reaction */}
+          {playerReaction && (
+            <div className={`mt-4 text-center animate-fade-up ${playerCorrect ? "text-green-400" : "text-red-400"}`}>
+              <p className="text-lg font-bold">{playerReaction}</p>
+            </div>
+          )}
         </div>
-      )}
 
-      {gamePhase === "result" && (
-        <div className="flex flex-col items-center justify-center min-h-screen p-6">
-          <div className="text-center max-w-lg">
-            <Trophy className={`w-20 h-20 mx-auto mb-4 ${playerScore > computerScore ? "text-yellow-400" : playerScore < computerScore ? "text-slate-500" : "text-purple-400"}`} />
-            <h1 className="text-5xl font-black mb-2">
-              {playerScore > computerScore && "🏆 YOU WIN! 🏆"}
-              {playerScore < computerScore && "💻 COMPUTER WINS! 💻"}
-              {playerScore === computerScore && "🤝 IT'S A TIE! 🤝"}
-            </h1>
-            <p className="text-xl text-purple-300/80 mb-6">
-              {playerScore > computerScore && "You've proven humanity's superiority... for now."}
-              {playerScore < computerScore && "The machines are taking over! Soon."}
-              {playerScore === computerScore && "Evenly matched! Rematch?"}
-            </p>
-            <div className="flex items-center justify-center gap-8 mb-8">
-              <div className="text-center">
-                <p className="text-sm text-purple-400">You</p>
-                <p className="text-5xl font-bold text-cyan-400">{playerScore}</p>
-              </div>
-              <div className="text-3xl text-purple-500">VS</div>
-              <div className="text-center">
-                <p className="text-sm text-purple-400">Computer</p>
-                <p className="text-5xl font-bold text-pink-400">{computerScore}</p>
+        {/* COMPUTER SIDE */}
+        <div className="relative flex flex-col items-center justify-center p-6 bg-gradient-to-b from-red-950/40 to-transparent">
+          <div className="absolute top-3 left-3 flex items-center gap-2">
+            <Zap className="w-5 h-5 text-red-400" />
+            <span className="text-sm font-semibold text-red-300">🤖 COMPUTER</span>
+          </div>
+          {computerStreak >= 2 && (
+            <div className="absolute top-3 right-3 bg-yellow-500/20 border border-yellow-500/30 rounded-full px-3 py-1 text-xs text-yellow-300 animate-pulse">
+              🔥 {computerStreak}x Streak!
+            </div>
+          )}
+
+          {!showResult && currentQ && (
+            <div className="w-full max-w-lg">
+              <p className="text-lg md:text-xl font-semibold text-center text-white mb-6 min-h-[3rem]">
+                {currentQ.question}
+              </p>
+              <div className="grid grid-cols-1 gap-3">
+                {currentQ.options.map((opt, idx) => {
+                  let btnClass = "bg-white/5 border border-white/10 text-white";
+                  if (computerAnswered) {
+                    if (idx === currentQ.correct) btnClass = "bg-green-500/20 border-green-400 text-green-300";
+                    else if (idx === computerChoice && idx !== currentQ.correct) btnClass = "bg-red-500/20 border-red-400 text-red-300";
+                    else btnClass = "bg-white/5 border-white/5 text-gray-500";
+                  } else {
+                    // Show thinking state
+                    btnClass = "bg-white/5 border border-white/5 text-gray-500";
+                  }
+                  return (
+                    <div
+                      key={idx}
+                      className={`${btnClass} rounded-xl p-4 font-medium border transition-all duration-200`}
+                    >
+                      <span className="text-xs text-gray-500 mr-2">{String.fromCharCode(65 + idx)}.</span>
+                      {opt}
+                      {!computerAnswered && idx === 0 && (
+                        <span className="ml-2 text-xs text-gray-600 animate-pulse">thinking...</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <ShimmerButton onClick={startGame} className="text-lg px-10 py-5">
-              <RefreshCw className="w-5 h-5 mr-2" />
-              Play Again
-            </ShimmerButton>
+          )}
+
+          {/* Computer reaction */}
+          {computerReaction && (
+            <div className={`mt-4 text-center animate-fade-up ${computerCorrect ? "text-red-400" : "text-green-400"}`}>
+              <p className="text-lg font-bold">{computerReaction}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Round result banner */}
+      {showResult && roundMessage && (
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-2xl px-8 py-4 text-center animate-fade-up">
+            <p className="text-2xl font-bold text-white">{roundMessage}</p>
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.5s ease-out;
-        }
-      `}</style>
-    </main>
+    </div>
   );
 }
